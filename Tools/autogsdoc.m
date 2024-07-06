@@ -1,10 +1,10 @@
 /** This tool produces GSDoc files from source files.
 
    <title>Autogsdoc ... a tool to make documentation from source code</title>
-   Copyright (C) 2001-2016 Free Software Foundation, Inc.
 
-   Written by:  Richard Frith-Macdonald <richard@brainstorm.co.uk>
-   Created: October 2001
+   Copyright (C) 2001-2023 Free Software Foundation, Inc.
+
+   Written By:  Richard Frith-Macdonald <richard@brainstorm.co.uk>
 
    This file is part of the GNUstep Project
 
@@ -19,9 +19,9 @@
    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 <chapter>
-  <heading>The autogsdoc tool</heading>
+  <heading>autogsdoc</heading>
   <section>
-    <heading>Overview</heading>
+    <heading>autogsdoc</heading>
     <p>
       The autogsdoc tool is a command-line utility that helps developers
       produce reference documentation for GNUstep APIs.  It also enables
@@ -618,12 +618,12 @@
 #import "GNUstepBase/NSString+GNUstepBase.h"
 #import "GNUstepBase/NSMutableString+GNUstepBase.h"
 
-/** Invokes the autogsdoc tool. */
 int
 main(int argc, char **argv, char **env)
 {
   NSProcessInfo		*proc;
   unsigned		i;
+  NSMutableDictionary	*safe;
   NSDictionary		*argsRecognized;
   NSUserDefaults	*defs;
   NSFileManager		*mgr;
@@ -728,6 +728,11 @@ main(int argc, char **argv, char **env)
 #endif
 
   outer = [NSAutoreleasePool new];
+
+  /* Objects we want to persist until the outer autorelease pool is exited
+   * can be stored in the 'safe; dictionary.
+   */
+  safe = [NSMutableDictionary dictionary];
 
 #ifndef HAVE_LIBXML
   NSLog(@"ERROR: The GNUstep Base Library was built\n"
@@ -897,7 +902,8 @@ main(int argc, char **argv, char **env)
 
   declared = [defs stringForKey: @"Declared"];
   project = [defs stringForKey: @"Project"];
-  refsName = [[project stringByAppendingPathExtension: @"igsdoc"] copy];
+  refsName = [project stringByAppendingPathExtension: @"igsdoc"];
+  [safe setObject: refsName forKey: @"refsName"];
 
   headerDirectory = [defs stringForKey: @"HeaderDirectory"];
   if (headerDirectory == nil)
@@ -1006,13 +1012,14 @@ main(int argc, char **argv, char **env)
   refsFile = [documentationDirectory
     stringByAppendingPathComponent: project];
   refsFile = [refsFile stringByAppendingPathExtension: @"igsdoc"];
-  projectRefs = [AGSIndex new];
+  projectRefs = AUTORELEASE([AGSIndex new]);
+  [safe setObject: projectRefs forKey: @"projectRefs"];
   originalIndex = nil;
   rDate = [NSDate distantPast];
   if ([mgr isReadableFileAtPath: refsFile] == YES)
     {
       originalIndex
-	= [[NSDictionary alloc] initWithContentsOfFile: refsFile];
+	= AUTORELEASE([[NSDictionary alloc] initWithContentsOfFile: refsFile]);
       if (originalIndex == nil)
 	{
 	  NSLog(@"Unable to read project file '%@'", refsFile);
@@ -1021,7 +1028,12 @@ main(int argc, char **argv, char **env)
 	{
 	  NSDictionary	*dict;
 
+	  [safe setObject: originalIndex forKey: @"originalIndex"];
 	  [projectRefs mergeRefs: originalIndex override: NO];
+	  if (verbose)
+	    {
+	      NSLog(@"Initialised projectRefs from %@", refsFile);
+	    }
 	  dict = [mgr fileAttributesAtPath: refsFile traverseLink: YES];
 	  rDate = [dict fileModificationDate];
 	}
@@ -1102,7 +1114,7 @@ main(int argc, char **argv, char **env)
 		  NSString		*k;
 		  unsigned		length;
 
-		  ms = [[NSMutableString alloc] initWithContentsOfFile: path];
+		  ms = [NSMutableString stringWithContentsOfFile: path];
 		  if (ms == nil)
 		    {
 		      NSLog(@"Cleaning ... failed to read '%@'", path);
@@ -1228,7 +1240,8 @@ main(int argc, char **argv, char **env)
 
   if ([sFiles count] == 0 && [gFiles count] == 0 && [hFiles count] == 0)
     {
-      NSLog(@"No .h, .m, .c, .gsdoc, or .html filename arguments found ... giving up");
+      NSLog(@"No .h, .m, .c, .gsdoc, or .html filename arguments found"
+	@" ... giving up");
       return 1;
     }
 
@@ -1260,15 +1273,21 @@ main(int argc, char **argv, char **env)
         }
       if ([defs boolForKey: @"DisableDefaultWords"] == NO)
         {
+	  [wm setObject: @"" forKey: @"BLOCK_SCOPE"];
 	  [wm setObject: @"//" forKey: @"DEFINE_BLOCK_TYPE"];
+	  [wm setObject: @"//" forKey: @"DEFINE_BLOCK_TYPE"];
+	  [wm setObject: @"//" forKey: @"DEFINE_BLOCK_TYPE_NO_ARGS"];
 	  [wm setObject: @"" forKey: @"GS_ATTRIB_DEPRECATED"];
 	  [wm setObject: @"" forKey: @"GS_DECLARE"];
 	  [wm setObject: @"" forKey: @"GS_DEPRECATED_FUNC"];
 	  [wm setObject: @"extern" forKey: @"GS_EXPORT"];
+	  [wm setObject: @"" forKey: @"GS_EXPORT_CLASS"];
 	  [wm setObject: @"" forKey: @"GS_GC_STRONG"];
 	  [wm setObject: @"" forKey: @"GS_GEOM_ATTR"];
 	  [wm setObject: @"extern" forKey: @"GS_GEOM_SCOPE"];
+	  [wm setObject: @"" forKey: @"GS_IMPORT"];
 	  [wm setObject: @"" forKey: @"GS_NORETURN_METHOD"];
+	  [wm setObject: @"//" forKey: @"GS_PRIVATE_INTERNAL"];
 	  [wm setObject: @"" forKey: @"GS_RANGE_ATTR"];
 	  [wm setObject: @"extern" forKey: @"GS_RANGE_SCOPE"];
 	  [wm setObject: @"" forKey: @"GS_ROOT_CLASS"];
@@ -1285,6 +1304,9 @@ main(int argc, char **argv, char **env)
 	  [wm setObject: @"" forKey: @"NS_RETURNS_RETAINED"];
 	  [wm setObject: @"" forKey: @"__strong"];
 	  [wm setObject: @"" forKey: @"__weak"];
+	  [wm setObject: @"" forKey: @"WEAK_ATTRIBUTE"];
+	  [wm setObject: @"" forKey: @"WINAPI"];
+	  [wm setObject: @"" forKey: @"WSAAPI"];
         }
       [parser setWordMap: wm];
       RELEASE(wm);
@@ -1348,7 +1370,8 @@ main(int argc, char **argv, char **env)
 
 	  if (ignoreDependencies == NO)
 	    {
-	      NSDate	*d;
+	      NSUInteger	pos;
+	      NSDate		*d;
 
 	      /*
 	       * Ask existing project info (.gsdoc file) for dependency
@@ -1356,7 +1379,12 @@ main(int argc, char **argv, char **env)
 	       * and the header file.
 	       */
 	      a = [projectRefs sourcesForHeader: hfile];
+	      pos = [a indexOfObject: hfile];
 	      [a insertObject: hfile atIndex: 0];
+	      if (pos != NSNotFound)
+		{
+		  [a removeObjectAtIndex: pos + 1];
+		}
 	      [projectRefs setSources: a forHeader: hfile];
 	      for (j = 0; j < [a count]; j++)
 		{
@@ -1473,10 +1501,18 @@ main(int argc, char **argv, char **env)
               for (j = 0; j < [sFiles count]; j++)
                 {
                   NSString *sourcePath = [sFiles objectAtIndex: j];
+
                   if ([sourcePath hasSuffix: sourceName] 
                    && [mgr isReadableFileAtPath: sourcePath])
                     {
+		      NSUInteger	index;
+
+		      index = [a indexOfObject: sourcePath];
                       [a addObject: sourcePath];
+		      if (index != NSNotFound)
+			{
+			  [a removeObjectAtIndex: index];
+			}
                     }
                 }
 	      if ([a count] > 0)
@@ -1564,6 +1600,7 @@ main(int argc, char **argv, char **env)
       DESTROY(pool);
       DESTROY(parser);
       DESTROY(output);
+      AUTORELEASE(informalProtocols);
     }
 
   /*
@@ -1574,8 +1611,10 @@ main(int argc, char **argv, char **env)
   count = [gFiles count];
   if (count > 0)
     {
-      NSDictionary	*projectIndex;
+      NSMutableArray	*merged
+	= [[NSMutableArray alloc] initWithCapacity: count];
       CREATE_AUTORELEASE_POOL(arp);
+      NSDictionary	*projectIndex;
 
       for (i = 0; i < count; i++)
 	{
@@ -1652,6 +1691,7 @@ main(int argc, char **argv, char **env)
 		    {
 		      NSLog(@"not a gsdoc document - because name node is %@",
 			[root name]);
+		      DESTROY(merged);
 		      return 1;
 		    }
 
@@ -1663,6 +1703,7 @@ main(int argc, char **argv, char **env)
 		   * accumulate index info in project references
 		   */
 		  [projectRefs mergeRefs: [localRefs refs] override: NO];
+		  [merged addObject: gsdocfile];
 		}
 	      else
 		{
@@ -1671,10 +1712,19 @@ main(int argc, char **argv, char **env)
 		}
 	    }
 	}
-      if (informalProtocols != nil) {
+      if (verbose)
+	{
+	  NSLog(@"Merged indexes into projectRefs from %@", merged);
+	}
+
+      if (informalProtocols != nil)
+	{
           [projectRefs addInformalProtocols: informalProtocols];
-          DESTROY(informalProtocols);
-      }
+	  if (verbose)
+	    {
+	      NSLog(@"Added informal protocols into projectRefs");
+	    }
+	}
       DESTROY(arp);
 
       /*
@@ -1689,10 +1739,12 @@ main(int argc, char **argv, char **env)
 	      NSLog(@"Sorry unable to write %@", refsFile);
 	    }
 	}
-      DESTROY(originalIndex);
+      originalIndex = nil;
+      DESTROY(merged);
     }
 
-  globalRefs = [AGSIndex new];
+  globalRefs = AUTORELEASE([AGSIndex new]);
+  [safe setObject: globalRefs forKey: @"globalRefs"];
 
   /*
    * 8) If we are either generating html output, or relocating existing
@@ -1811,11 +1863,13 @@ main(int argc, char **argv, char **env)
       /*
        * Merge any "plain project" references.
        */
-      if (projects != nil)
+      if ([projects count] > 0)
 	{
-	  NSEnumerator	*e = [projects keyEnumerator];
-	  NSString	*k;
+	  NSEnumerator		*e = [projects keyEnumerator];
+	  NSMutableArray	*merged;
+	  NSString		*k;
 
+	  merged = [NSMutableArray arrayWithCapacity: [projects count]];
 	  while ((k = [e nextObject]) != nil)
 	    {
 	      if ([mgr isReadableFileAtPath: k] == NO)
@@ -1851,8 +1905,13 @@ main(int argc, char **argv, char **env)
 		      [tmp setDirectory: p];
 		      [globalRefs mergeRefs: [tmp refs] override: YES];
 		      RELEASE(tmp);
+		      [merged addObject: k];
 		    }
 		}
+	    }
+	  if (verbose)
+	    {
+	      NSLog(@"Merged indexes into globalRefs from %@", merged);
 	    }
 	}
 
@@ -1860,6 +1919,10 @@ main(int argc, char **argv, char **env)
        * Accumulate project index info into global index
        */
       [globalRefs mergeRefs: [projectRefs refs] override: YES];
+      if (verbose)
+	{
+	  NSLog(@"Merged indexes from projectRefs into globalRefs");
+	}
 
       RELEASE(pool);
     }
@@ -2126,7 +2189,7 @@ main(int argc, char **argv, char **env)
 		  [html setProjectRefs: projectRefs];
 		  [html setLocalRefs: localRefs];
                   [html setInstanceVariablesAtEnd: instanceVarsAtEnd];
-		  generated = [html outputDocument: root];
+		  generated = [html outputDocument: root name: gsdocfile];
 		  d = [generated dataUsingEncoding: NSUTF8StringEncoding];
 		  if ([d writeToFile: htmlfile atomically: YES] == NO)
 		    {

@@ -216,7 +216,6 @@ GS_EXPORT_CLASS
 #if	GS_EXPOSE(NSFileManager)
 @private
   id<NSFileManagerDelegate> _delegate;
-  NSString	*_lastError;
 #endif
 #if     GS_NONFRAGILE
 #else
@@ -356,6 +355,21 @@ GS_EXPORT_CLASS
          appropriateForURL: (NSURL *)url 
                     create: (BOOL)shouldCreate 
                      error: (NSError **)error;
+
+/**
+ * Returns an array of search paths to look at for resources.<br/ >
+ * The paths are returned in domain order:
+ * USER, LOCAL, NETWORK then SYSTEM.<br />
+ * The presence of a path in this list does <em>not</em> mean that the
+ * path actually exists in the filesystem.<br />
+ * If you are wanting to locate an existing resource, you should normally
+ * call this method with NSAllDomainsMask, but if you wish to find the
+ * path in which you should create a new file, you would generally
+ * specify a particular domain, and then create the path in the file
+ * system if it does not already exist.
+ */
+- (GS_GENERIC_CLASS(NSArray, NSURL *) *)URLsForDirectory: (NSSearchPathDirectory)directory
+                                               inDomains: (NSSearchPathDomainMask)domain;
 
 /**
  * Enumerate over the contents of a directory.

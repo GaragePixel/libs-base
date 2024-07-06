@@ -114,6 +114,9 @@ static  NSUncaughtExceptionHandler *_NSUncaughtExceptionHandler = 0;
 - (GSStackTrace*) _callStack;
 @end
 
+#if	defined(_WIN32) || defined(USE_BFD)
+static	gs_mutex_t	traceLock;
+#endif
 
 #if	defined(_WIN32)
 #if	defined(USE_BFD)
@@ -376,17 +379,17 @@ GSPrivateBaseAddress(void *addr, void **base)
       DESTROY(self);
       return nil;
     }
-  _symbols = malloc (neededSpace);
+  _symbols = (asymbol**)malloc(neededSpace);
   if (!_symbols)
     {
-      //NSLog (@"GSBinaryFileInfo: Can't allocate buffer");
+      //NSLog(@"GSBinaryFileInfo: Can't allocate buffer");
       DESTROY(self);
       return nil;
     }
-  _symbolCount = bfd_canonicalize_symtab (_abfd, _symbols);
+  _symbolCount = bfd_canonicalize_symtab(_abfd, _symbols);
   if (_symbolCount < 0)
     {
-      //NSLog (@"GSBinaryFileInfo: BFD error while reading symbols");
+      //NSLog(@"GSBinaryFileInfo: BFD error while reading symbols");
       DESTROY(self);
       return nil;
     }
@@ -402,7 +405,7 @@ struct SearchAddressStruct
   GSFunctionInfo	*theInfo;
 };
 
-static void find_address (bfd *abfd, asection *section,
+static void find_address(bfd *abfd, asection *section,
   struct SearchAddressStruct *info)
 {
   bfd_vma	address;
@@ -451,7 +454,7 @@ static void find_address (bfd *abfd, asection *section,
     }
 
 
-  if (bfd_find_nearest_line (abfd, section, info->symbols,
+  if (bfd_find_nearest_line(abfd, section, info->symbols,
     address - vma, &fileName, &functionName, &line))
     {
       GSFunctionInfo	*fi;
@@ -484,8 +487,10 @@ static void find_address (bfd *abfd, asection *section,
   struct SearchAddressStruct searchInfo =
     { address, self, _symbols, nil };
 
-  bfd_map_over_sections (_abfd,
+  GS_MUTEX_LOCK(traceLock);
+  bfd_map_over_sections(_abfd,
     (void (*) (bfd *, asection *, void *)) find_address, &searchInfo);
+  GS_MUTEX_UNLOCK(traceLock);
   return searchInfo.theInfo;
 }
 
@@ -615,12 +620,10 @@ static SymInitializeType initSym = 0;
 static SymSetOptionsType optSym = 0;
 static SymFromAddrType fromSym = 0;
 static HANDLE	hProcess = 0;
-static	gs_mutex_t	traceLock;
 #define	MAXFRAMES 62	/* Limitation of windows-xp */
 #else
 #define MAXFRAMES 128   /* 1KB buffer on 64bit machine */
 #endif
-
 
 #if	!defined(HAVE_BUILTIN_EXTRACT_RETURN_ADDRESS)
 # define	__builtin_extract_return_address(X)	X
@@ -985,20 +988,20 @@ GSPrivateReturnAddresses(NSUInteger **returns)
   numReturns = (capture)(0, MAXFRAMES, (void**)addr, NULL);
   if (numReturns > 0)
     {
-      *returns = malloc(numReturns * sizeof(void*));
-      memcpy(*returns, addr, numReturns * sizeof(void*));
+      *returns = (NSUInteger*)malloc(numReturns * sizeof(NSUInteger));
+      memcpy(*returns, addr, numReturns * sizeof(NSUInteger));
     }
   
   GS_MUTEX_UNLOCK(traceLock);
 
 #elif	defined(HAVE_BACKTRACE)
-  void          *addr[MAXFRAMES*sizeof(void*)];
+  void          *addr[MAXFRAMES*sizeof(NSUInteger)];
 
   numReturns = backtrace(addr, MAXFRAMES);
   if (numReturns > 0)
     {
-      *returns = malloc(numReturns * sizeof(void*));
-      memcpy(*returns, addr, numReturns * sizeof(void*));
+      *returns = (NSUInteger*)malloc(numReturns * sizeof(NSUInteger));
+      memcpy(*returns, addr, numReturns * sizeof(NSUInteger));
     }
 #elif defined(WITH_UNWIND)
   void          *addr[MAXFRAMES];
@@ -1009,8 +1012,8 @@ GSPrivateReturnAddresses(NSUInteger **returns)
   numReturns = state.current - addr;
   if (numReturns > 0)
     {
-      *returns = malloc(numReturns * sizeof(void*));
-      memcpy(*returns, addr, numReturns * sizeof(void*));
+      *returns = (NSUInteger*)malloc(numReturns * sizeof(NSUInteger));
+      memcpy(*returns, addr, numReturns * sizeof(NSUInteger));
     }
 #else
   int   n;
@@ -1031,7 +1034,7 @@ GSPrivateReturnAddresses(NSUInteger **returns)
     {
       jbuf_type *env;
 
-      *returns = malloc(numReturns * sizeof(void*));
+      *returns = (NSUInteger*)malloc(numReturns * sizeof(NSUInteger));
 
       env = jbuf();
       if (sigsetjmp(env->buf, 1) == 0)
@@ -1085,7 +1088,7 @@ GSPrivateReturnAddresses(NSUInteger **returns)
                 {
                   break;
                 }
-              memcpy(&(*returns)[i], env->addr, sizeof(void*));
+              memcpy(&(*returns)[i], env->addr, sizeof(NSUInteger));
             }
           signal(SIGSEGV, env->segv);
           signal(SIGBUS, env->bus);
@@ -1111,7 +1114,7 @@ GSPrivateReturnAddresses(NSUInteger **returns)
 
 + (void) initialize
 {
-#if	defined(_WIN32) && !defined(USE_BFD)
+#if	defined(_WIN32) || defined(USE_BFD)
   GS_MUTEX_INIT_RECURSIVE(traceLock);
 #endif
 #if     defined(USE_BFD)
@@ -1446,10 +1449,10 @@ callUncaughtHandler(id value)
 #if defined(_NATIVE_OBJC_EXCEPTIONS)
 #  ifdef HAVE_SET_UNCAUGHT_EXCEPTION_HANDLER
       objc_setUncaughtExceptionHandler(callUncaughtHandler);
-#  elif defined(HAVE_UNEXPECTED)
-      _objc_unexpected_exception = callUncaughtHandler;
 #  elif defined(HAVE_SET_UNEXPECTED)
       objc_set_unexpected(callUncaughtHandler);
+#  elif defined(HAVE_UNEXPECTED)
+      _objc_unexpected_exception = callUncaughtHandler;
 #  endif
 #endif
     }
