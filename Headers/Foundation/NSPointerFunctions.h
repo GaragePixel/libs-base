@@ -80,7 +80,7 @@ enum {
    */
   NSPointerFunctionsCStringPersonality = (3<<8),
 
-  /** Use memcmp for comparison and a hash of the sructure contents.
+  /** Use memcmp for comparison and a hash of the structure contents.
    * A size function must be set so that the size of the memcmp and hash
    * are known,
    */
